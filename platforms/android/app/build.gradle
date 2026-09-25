@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     id 'com.android.application'
 }
@@ -27,6 +29,40 @@ ext.borealisAndroid = [
 ]
 
 apply from: new File(borealisDir, 'platforms/android/gradle/borealis-application.gradle')
+
+def duskPropertiesFile = new File(duskRepoDir, 'build/android-arm64/dusk-android.properties')
+def duskExtraNativeLibraries = []
+if (duskPropertiesFile.isFile()) {
+    def duskProperties = new Properties()
+    duskPropertiesFile.withInputStream { duskProperties.load(it) }
+    def value = duskProperties.getProperty('dusk.extraNativeLibraries')
+    if (value) {
+        duskExtraNativeLibraries = value.split(',').collect { project.file(it) }
+    }
+}
+def duskJniLibsDir = layout.buildDirectory.dir('generated/jniLibs/dusk')
+def stageDuskJniLibs = tasks.register('stageDuskJniLibs', Sync) {
+    duskExtraNativeLibraries.each { library ->
+        from(library) {
+            into 'arm64-v8a'
+        }
+    }
+    into(duskJniLibsDir)
+    doFirst {
+        duskExtraNativeLibraries.each { library ->
+            if (!library.isFile()) {
+                throw new GradleException(
+                    "Native library is missing: ${library}. Build the CMake target first.")
+            }
+        }
+    }
+}
+android.sourceSets.main.jniLibs.srcDirs += [duskJniLibsDir]
+// adrenotools loads its hooks from the extracted native library directory.
+android.packaging.jniLibs.useLegacyPackaging = true
+tasks.named('preBuild').configure {
+    dependsOn(stageDuskJniLibs)
+}
 
 dependencies {
     implementation fileTree(dir: 'libs', include: ['*.jar'])

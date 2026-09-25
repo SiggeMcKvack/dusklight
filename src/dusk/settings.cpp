@@ -22,6 +22,7 @@ UserSettings g_userSettings = {
         .lastWindowWidth {"video.lastWindowWidth", 0},
         .lastWindowHeight {"video.lastWindowHeight", 0},
         .uiScale {"video.uiScale", 100},
+        .gpuDriver {"video.gpuDriver", ""},
     },
 
     .audio = {
@@ -260,6 +261,7 @@ void registerSettings() {
     Register(g_userSettings.video.lastWindowHeight);
     Register(g_userSettings.video.uiScale, 
         [](const int&, const int&) { dusk::ui::apply_scale(); });
+    Register(g_userSettings.video.gpuDriver);
 
     // Audio
     Register(g_userSettings.audio.outputMode);

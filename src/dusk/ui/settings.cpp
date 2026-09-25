@@ -18,6 +18,7 @@
 #include "dusk/config.hpp"
 #include "dusk/data.hpp"
 #include "dusk/discord_presence.hpp"
+#include "dusk/gpu_driver.hpp"
 #include "dusk/hotkeys.h"
 #include "dusk/imgui/ImGuiEngine.hpp"
 #include "dusk/language.hpp"
@@ -242,6 +243,123 @@ Rml::String graphics_backend_display_name() {
     }
     return Rml::String{backend_name(aurora_get_backend())};
 }
+
+#if defined(DUSK_HAS_GPU_DRIVER)
+constexpr const char* kSystemGpuDriverName = "System";
+
+void show_gpu_driver_modal(Rml::String title, Rml::String message, const char* icon) {
+    auto dismiss = [](Modal& modal) {
+        mDoAud_seStartMenu(kSoundWindowClose);
+        modal.pop();
+    };
+    push_document(std::make_unique<Modal>(Modal::Props{
+        .title = std::move(title),
+        .bodyText = std::move(message),
+        .actions = {ModalAction{.label = "OK", .onPressed = dismiss}},
+        .onDismiss = dismiss,
+        .icon = icon,
+    }));
+    if (auto* doc = top_document()) {
+        doc->focus();
+    }
+}
+
+Rml::String gpu_driver_display_name() {
+    const auto& configured = getSettings().video.gpuDriver.getValue();
+    if (configured.empty()) {
+        return kSystemGpuDriverName;
+    }
+    for (const auto& driver : gpu_driver::installed()) {
+        if (driver.id == configured) {
+            return Rml::String{driver.name};
+        }
+    }
+    return Rml::String{configured};
+}
+
+void gpu_driver_install_callback(borealis::file_select::Result result) {
+    if (result.status == borealis::file_select::Status::Canceled) {
+        return;
+    }
+    if (result.status != borealis::file_select::Status::Selected || result.locations.empty()) {
+        show_gpu_driver_modal("Driver Not Installed",
+            result.message.empty() ? "The file picker could not be opened." : result.message,
+            "warning");
+        return;
+    }
+    const auto installed = gpu_driver::install(result.locations.front());
+    if (!installed) {
+        show_gpu_driver_modal("Driver Not Installed", Rml::String{installed.message}, "warning");
+        return;
+    }
+    mDoAud_seStartMenu(kSoundItemChange);
+    getSettings().video.gpuDriver.setValue(installed.driver.id);
+    config::save();
+    show_gpu_driver_modal("Driver Installed",
+        fmt::format("{} has been installed and selected. Close and reopen {} to use it.",
+            installed.driver.name, AppName),
+        "check_circle");
+}
+
+void populate_gpu_driver_pane(Pane& pane) {
+    const auto select = [](std::string id) {
+        return [id = std::move(id)] {
+            mDoAud_seStartMenu(kSoundItemChange);
+            getSettings().video.gpuDriver.setValue(id);
+            config::save();
+        };
+    };
+    pane.add_button({
+            .text = kSystemGpuDriverName,
+            .isSelected = [] { return getSettings().video.gpuDriver.getValue().empty(); },
+        })
+        .on_pressed(select(""));
+    for (const auto& driver : gpu_driver::installed()) {
+        pane.add_button({
+                .text = Rml::String{driver.name},
+                .isSelected =
+                    [id = driver.id] { return getSettings().video.gpuDriver.getValue() == id; },
+            })
+            .on_pressed(select(driver.id));
+    }
+    pane.add_button({
+            .text = "Install Driver...",
+            .isDisabled = [] { return borealis::file_select::busy(); },
+        })
+        .on_pressed([] {
+            borealis::file_select::open_file(
+                {
+                    .parentWindow = aurora::window::get_sdl_window(),
+                    .filters = {{"Driver packages", "zip"}},
+                },
+                &gpu_driver_install_callback);
+        });
+    pane.add_button({
+            .text = "Remove Selected Driver",
+            .isDisabled = [] { return getSettings().video.gpuDriver.getValue().empty(); },
+        })
+        .on_pressed([] {
+            const auto id = getSettings().video.gpuDriver.getValue();
+            if (gpu_driver::remove(id)) {
+                mDoAud_seStartMenu(kSoundItemChange);
+            }
+        });
+
+    Rml::String help =
+        "<br/>Load a user-installed Vulkan driver (e.g. Mesa Turnip) instead of the one shipped "
+        "with the device. Only useful on Adreno (Qualcomm) GPUs with the Vulkan backend. "
+        "Driver packages are .zip files containing meta.json.<br/>Changes require closing and "
+        "reopening the app.";
+    const auto& configured = getSettings().video.gpuDriver.getValue();
+    if (configured == prelaunch_state().initialGpuDriver && !configured.empty() &&
+        gpu_driver::active_id() != configured)
+    {
+        help += "<br/><br/>The selected driver could not be loaded; the system driver is in use. "
+                "See the log for details.";
+    }
+    pane.add_rml(help);
+}
+#endif
 
 Rml::String configured_data_path_display_name() {
     const auto path = data::abbreviated_path_string(data::configured_data_path());
@@ -917,6 +1035,23 @@ SettingsWindow::SettingsWindow(bool prelaunch) : mPrelaunch(prelaunch) {
                     "<br/>Disable the top and bottom black bars during L-targeting, aiming, "
                     "cutscenes, dialogue, etc.");
             });
+
+#if defined(DUSK_HAS_GPU_DRIVER)
+        {
+            leftPane.add_section("Driver");
+            leftPane.register_control(
+                leftPane.add_select_button({
+                    .key = "GPU Driver",
+                    .getValue = [] { return gpu_driver_display_name(); },
+                    .isModified =
+                        [] {
+                            return getSettings().video.gpuDriver.getValue() !=
+                                   prelaunch_state().initialGpuDriver;
+                        },
+                }),
+                rightPane, &populate_gpu_driver_pane);
+        }
+#endif
     });
 
     add_tab("Input", [this](Rml::Element* content) {

@@ -184,6 +184,7 @@ struct UserSettings {
         ConfigVar<int> lastWindowWidth;
         ConfigVar<int> lastWindowHeight;
         ConfigVar<int> uiScale;
+        ConfigVar<std::string> gpuDriver;  // Android only; empty = system driver
     } video;
 
     struct {

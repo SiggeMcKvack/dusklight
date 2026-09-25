@@ -23,7 +23,14 @@ cmake --preset android-arm64
 cmake --build --preset android-arm64
 ```
 
-This build produces `build/android-arm64/libmain.so`
+This build produces `build/android-arm64/libmain.so`, plus the shared objects needed for custom GPU driver support (`libdusk_vulkan_shim.so` and the libadrenotools hook libraries listed in `build/android-arm64/dusk-android.properties`). Gradle stages all of them into the APK.
+
+## Custom GPU Drivers
+
+On arm64 devices the Video settings tab offers a "GPU Driver" option. It accepts the same
+driver packages as other emulators (a `.zip` containing `meta.json` and the driver `.so`,
+e.g. Mesa Turnip builds) and loads them through [libadrenotools](https://github.com/bylaws/libadrenotools).
+Packages are stored under the app's internal files directory in `gpu_drivers/<id>/`.
 
 ## Build APK
 

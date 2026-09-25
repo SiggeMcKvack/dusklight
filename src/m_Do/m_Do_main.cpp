@@ -40,6 +40,7 @@
 #include "dusk/audio/DuskDsp.hpp"
 #include "dusk/commands.hpp"
 #include "dusk/config.hpp"
+#include "dusk/gpu_driver.hpp"
 #include "dusk/data.hpp"
 #include "dusk/discord_presence.hpp"
 #include "dusk/dusk.h"
@@ -703,6 +704,13 @@ int game_main(int argc, char* argv[]) {
         config.pauseOnFocusLost = dusk::getSettings().game.pauseOnFocusLost;
         config.imGuiInitCallback = &aurora_imgui_init_callback;
         config.allowTextureDumps = false;
+        const auto gpuDriverSearchPath =
+            dusk::gpu_driver::activate(dusk::getSettings().video.gpuDriver.getValue());
+        const char* runtimeSearchPaths[] = {gpuDriverSearchPath ? gpuDriverSearchPath->c_str() : nullptr};
+        if (gpuDriverSearchPath) {
+            config.runtimeSearchPaths = runtimeSearchPaths;
+            config.runtimeSearchPathCount = 1;
+        }
         auroraInfo = aurora_initialize(argc, argv, &config);
     }
 
